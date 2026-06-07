@@ -1,0 +1,38 @@
+data:
+  root: "./dataset"           # AI-Hub beef carcass dataset root
+  image_size: 512
+  num_classes: 5
+  class_names: ["1++", "1+", "1", "2", "3"]
+  train_ratio: 0.7
+  val_ratio: 0.1
+  test_ratio: 0.2
+  num_workers: 4
+
+training:
+  batch_size: 32
+  epochs: 50
+  lr: 1e-4
+  weight_decay: 1e-4
+  scheduler: cosine
+  early_stopping_patience: 10
+  seed: 42
+
+model:
+  pretrained: true            # ImageNet pretrained ResNet50
+
+perturbation:
+  brightness_delta: 0.2       # ±20% pixel scale
+  contrast_range: [0.8, 1.2]
+  gaussian_noise_sigma: 0.05  # normalized
+  random_crop_ratio: 0.9      # keep 90% of original area
+  rotation_degrees: 10        # ±10°
+
+evaluation:
+  gradcam_layer: "layer4"     # last conv block of ResNet50
+  top_k_percent: 0.20         # Top-20% activation pixels for IoU
+  ssim_window_size: 11
+
+paths:
+  checkpoint_dir: "./checkpoints"
+  results_dir: "./results"
+  figures_dir: "./figures"
