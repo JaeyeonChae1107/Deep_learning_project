@@ -1,12 +1,9 @@
 data:
-  root: "./dataset"           # AI-Hub beef carcass dataset root
-  image_size: 512
+  root: "./dataset/images"
+  image_size: 224          # 224 for memory safety; 512 requires ~16GB VRAM for Model C
   num_classes: 5
   class_names: ["1++", "1+", "1", "2", "3"]
-  train_ratio: 0.7
-  val_ratio: 0.1
-  test_ratio: 0.2
-  num_workers: 4
+  num_workers: 0           # 0 is safe on Windows; increase to 4 on Linux/Mac
 
 training:
   batch_size: 32
@@ -16,21 +13,37 @@ training:
   scheduler: cosine
   early_stopping_patience: 10
   seed: 42
+  use_class_weights: true  # compensate for grade imbalance (grade 3 is very rare)
 
 model:
-  pretrained: true            # ImageNet pretrained ResNet50
+  # backbone is fixed to resnext50_32x4d inside each model class;
+  # changing this value has no effect — modify models/__init__.py to swap backbones.
+  pretrained: true
 
 perturbation:
-  brightness_delta: 0.2       # ±20% pixel scale
+  types: [brightness, contrast, gaussian_noise, random_crop, rotation]
+  # Training: one type randomly chosen per sample, strength sampled from range
+  brightness_range: [0.8, 1.2]
   contrast_range: [0.8, 1.2]
-  gaussian_noise_sigma: 0.05  # normalized
-  random_crop_ratio: 0.9      # keep 90% of original area
-  rotation_degrees: 10        # ±10°
+  gaussian_noise_sigma_range: [0.01, 0.05]
+  random_crop_ratio_range: [0.85, 0.95]
+  rotation_degrees_range: [-10, 10]
+  # Evaluation: fixed strengths applied deterministically per perturbation type
+  eval_brightness: 1.2
+  eval_contrast: 1.2
+  eval_gaussian_noise_sigma: 0.05
+  eval_random_crop_ratio: 0.90
+  eval_rotation_degrees: 10
+
+consistency_loss:
+  lambda_kl: 1.0           # weight of KL(p || p') in total loss for Model C
 
 evaluation:
-  gradcam_layer: "layer4"     # last conv block of ResNet50
-  top_k_percent: 0.20         # Top-20% activation pixels for IoU
+  gradcam_layer: "layer4"
+  top_k_percent: 0.20      # Top-20% activation pixels for IoU
   ssim_window_size: 11
+  # crop/rotation change spatial coordinates; skip SSIM/IoU for those two
+  skip_spatial_metrics_for: [random_crop, rotation]
 
 paths:
   checkpoint_dir: "./checkpoints"
