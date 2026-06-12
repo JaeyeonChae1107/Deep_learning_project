@@ -1,7 +1,7 @@
 from .resnext50_baseline import ResNeXt50Baseline
 from .resnext50_baseline_loss import ResNeXt50BaselineLoss
 from .resnext50_cbam import ResNeXt50CBAM
-from .resnext50_cbam_loss import ResNeXt50CBAMLoss, compute_loss_model_c
+from .resnext50_cbam_loss import ResNeXt50CBAMLoss
 from .attention_module.cbam import CBAM, ChannelGate, SpatialGate
 import torch.nn as nn
 

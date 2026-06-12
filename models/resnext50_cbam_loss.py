@@ -35,14 +35,12 @@ compared to Model B.
 
 Usage
 -----
-    from models.resnext50_cbam_loss import ResNeXt50CBAMLoss, compute_loss_model_c
+    from models.resnext50_cbam_loss import ResNeXt50CBAMLoss
 
     model = ResNeXt50CBAMLoss(num_classes=5, pretrained=True)
 
     # Inside training loop:
-    loss, logits_clean = compute_loss_model_c(
-        model, x, x_prime, y, lambda_kl=1.0
-    )
+    loss, logits_clean = model.consistency_loss(x, x_prime, y, ce_fn, lambda_kl=1.0)
     loss.backward()
 """
 
@@ -159,35 +157,3 @@ class ResNeXt50CBAMLoss(nn.Module):
 
         total_loss = loss_ce_orig + loss_ce_pert + lambda_kl * kl_loss
         return total_loss, logits_orig
-
-
-# ── standalone loss function (alternative API) ────────────────────────────────
-
-def compute_loss_model_c(
-    model:     ResNeXt50CBAMLoss,
-    x_orig:    torch.Tensor,
-    x_pert:    torch.Tensor,
-    targets:   torch.Tensor,
-    lambda_kl: float = 1.0,
-    ce_weight: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Convenience function: computes Model C loss without needing a pre-built
-    CrossEntropyLoss object.
-
-    Parameters
-    ----------
-    model       : ResNeXt50CBAMLoss
-    x_orig      : clean image batch [B, 3, H, W]
-    x_pert      : perturbed image batch [B, 3, H, W]
-    targets     : ground-truth labels [B]
-    lambda_kl   : weight of the KL term (default 1.0)
-    ce_weight   : optional class-weight tensor for CrossEntropyLoss
-
-    Returns
-    -------
-    total_loss   : scalar Tensor
-    logits_clean : Tensor [B, num_classes]
-    """
-    ce_fn = nn.CrossEntropyLoss(weight=ce_weight)
-    return model.consistency_loss(x_orig, x_pert, targets, ce_fn, lambda_kl)

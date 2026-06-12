@@ -46,7 +46,6 @@ def _make_transforms(image_size: int, split: str) -> transforms.Compose:
         return transforms.Compose([
             transforms.Resize((image_size, image_size)),
             transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.1, contrast=0.1),
             transforms.ToTensor(),
             normalize,
         ])

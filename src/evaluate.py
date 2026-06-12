@@ -1,5 +1,5 @@
 """
-Reliability evaluation for all three model variants.
+Reliability evaluation for all four model variants (2×2 ablation).
 
 For each model and each perturbation type, this script reports:
 
@@ -11,9 +11,10 @@ For each model and each perturbation type, this script reports:
     - KL divergence:   mean KL(p || p')
     - JSD:             mean Jensen-Shannon divergence
 
-  Attention stability (brightness / contrast / noise only):
-    - Grad-CAM SSIM:   structural similarity of clean vs. perturbed heatmaps
-    - Top-20% IoU:     overlap of highest-activation regions
+  Grad-CAM figures (10 fixed images, 2 per grade):
+    - Same images across all four models for direct visual comparison
+    - Photometric: [original | CAM clean | CAM perturbed]
+    - Spatial:     [original + CAM clean | perturbed image + CAM perturbed]
 
 Results are saved to results/{model_type}_eval.json and a summary CSV.
 
@@ -21,8 +22,9 @@ Usage:
     python src/evaluate.py --model baseline
     python src/evaluate.py --model cbam
     python src/evaluate.py --model cbam_loss
+    python src/evaluate.py --model baseline_loss
 
-    # Evaluate all three and write comparison CSV:
+    # Evaluate all four and print comparison table:
     python src/evaluate.py --all
 """
 
@@ -38,7 +40,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import yaml
-from skimage.metrics import structural_similarity as ssim
 from sklearn.metrics import f1_score
 from tqdm import tqdm
 
@@ -47,13 +48,13 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.dataset import BeefGradingDataset, CLASS_NAMES
-from src.gradcam import GradCAM, cam_iou, top_k_mask, save_gradcam_figure
+from src.gradcam import GradCAM, save_gradcam_figure
 from models import build_model
 from src.perturbation import FixedPerturbation
 
 
 PERTURB_TYPES_LIST = ["brightness", "contrast", "gaussian_noise", "random_crop", "rotation"]
-SPATIAL_SKIP = {"random_crop", "rotation"}  # coordinate-frame changes; skip SSIM/IoU
+SPATIAL_SKIP = {"random_crop", "rotation"}  # show perturbed image in figure (2-panel)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ def eval_classification(
     model: torch.nn.Module,
     dataset: BeefGradingDataset,
     device: torch.device,
-    batch_size: int = 64,
+    batch_size: int = 32,
 ) -> dict:
     """Accuracy and per-class F1 on clean images."""
     loader = torch.utils.data.DataLoader(
@@ -123,19 +124,20 @@ def eval_perturbation(
     perturb_type: str,
     cfg: dict,
     device: torch.device,
-    top_k: float = 0.20,
-    ssim_win: int = 11,
     figures_dir: Path | None = None,
     n_save: int = 0,
 ) -> dict:
     """
-    Compute prediction and attention stability for a single perturbation type.
-    Processes one sample at a time (required for Grad-CAM).
+    Compute prediction stability for a single perturbation type.
+
+    Agreement / KL / JSD are computed over the full test set.
+    Grad-CAM figures are saved only for the quota images (n_per_class per grade),
+    so the same fixed images are visualised across all four models.
 
     Args:
-        figures_dir: directory to save Grad-CAM sample figures (None → skip)
-        n_save:      total figures to save per perturbation type, distributed
-                     evenly across classes (n_save=5 → 1 per class)
+        figures_dir: directory to save Grad-CAM figures (None → skip)
+        n_save:      total Grad-CAM figures per perturbation type, split
+                     evenly across grades (10 → 2 per grade)
     """
     perturb = FixedPerturbation(perturb_type, cfg)
     gradcam = GradCAM(model, target_layer_name=cfg["evaluation"]["gradcam_layer"])
@@ -143,19 +145,16 @@ def eval_perturbation(
     skip_spatial = perturb_type in SPATIAL_SKIP
 
     agreements, kl_divs, jsd_vals = [], [], []
-    ssim_vals, iou_vals = [], []
-    n_per_class  = max(1, n_save // len(CLASS_NAMES))
+    n_per_class = max(1, n_save // len(CLASS_NAMES))
     saved_per_class: dict[int, int] = {i: 0 for i in range(len(CLASS_NAMES))}
 
     model.eval()
     for x, label in tqdm(dataset, desc=f"perturb={perturb_type}", leave=False):
-        # x: [C, H, W] tensor (already normalised by dataset transform)
         x = x.to(device)
 
-        # Predictions
         with torch.no_grad():
-            p_logits  = model(x.unsqueeze(0))
-            p         = F.softmax(p_logits, dim=1).squeeze(0).cpu()  # [5]
+            p_logits = model(x.unsqueeze(0))
+            p        = F.softmax(p_logits, dim=1).squeeze(0).cpu()
 
         x_prime = perturb(x).to(device)
         with torch.no_grad():
@@ -169,25 +168,13 @@ def eval_perturbation(
         kl_divs.append(kl_divergence(p, p2))
         jsd_vals.append(js_divergence(p, p2))
 
-        want_save = figures_dir is not None and saved_per_class[label] < n_per_class
-
-        if not skip_spatial:
-            # Photometric perturbation: compute CAMs for every sample (needed for SSIM/IoU)
+        # Grad-CAM only for the fixed quota images (same 2 per grade across all models)
+        if figures_dir is not None and saved_per_class[label] < n_per_class:
             cam_orig = gradcam.compute(x,       class_idx=pred_orig)
             cam_pert = gradcam.compute(x_prime, class_idx=pred_orig)
+            idx = saved_per_class[label]
 
-            win = min(ssim_win, cam_orig.shape[0], cam_orig.shape[1])
-            if win % 2 == 0:
-                win -= 1
-            sim = ssim(cam_orig, cam_pert, data_range=1.0, win_size=win)
-            ssim_vals.append(float(sim))
-
-            mask_orig = top_k_mask(cam_orig, top_k)
-            mask_pert = top_k_mask(cam_pert, top_k)
-            iou_vals.append(cam_iou(mask_orig, mask_pert))
-
-            if want_save:
-                idx = saved_per_class[label]
+            if not skip_spatial:
                 save_gradcam_figure(
                     img_norm      = x.cpu(),
                     cam_clean     = cam_orig,
@@ -196,40 +183,25 @@ def eval_perturbation(
                     class_name    = CLASS_NAMES[pred_orig],
                     perturb_type  = perturb_type,
                 )
-                saved_per_class[label] += 1
-
-        elif want_save:
-            # Spatial perturbation: SSIM/IoU skipped, but still visualise where
-            # the model attends on the spatially-transformed image
-            cam_orig = gradcam.compute(x,       class_idx=pred_orig)
-            cam_pert = gradcam.compute(x_prime, class_idx=pred_orig)
-            idx = saved_per_class[label]
-            save_gradcam_figure(
-                img_norm             = x.cpu(),
-                cam_clean            = cam_orig,
-                cam_perturbed        = cam_pert,
-                img_norm_perturbed   = x_prime.cpu(),
-                save_path            = figures_dir / perturb_type / f"grade{CLASS_NAMES[label]}_{idx:02d}.png",
-                class_name           = CLASS_NAMES[pred_orig],
-                perturb_type         = perturb_type,
-            )
+            else:
+                save_gradcam_figure(
+                    img_norm           = x.cpu(),
+                    cam_clean          = cam_orig,
+                    cam_perturbed      = cam_pert,
+                    img_norm_perturbed = x_prime.cpu(),
+                    save_path          = figures_dir / perturb_type / f"grade{CLASS_NAMES[label]}_{idx:02d}.png",
+                    class_name         = CLASS_NAMES[pred_orig],
+                    perturb_type       = perturb_type,
+                )
             saved_per_class[label] += 1
 
     gradcam.remove_hooks()
 
-    result = {
-        "top1_agreement":   float(np.mean(agreements)),
-        "kl_divergence":    float(np.mean(kl_divs)),
-        "jsd":              float(np.mean(jsd_vals)),
+    return {
+        "top1_agreement": float(np.mean(agreements)),
+        "kl_divergence":  float(np.mean(kl_divs)),
+        "jsd":            float(np.mean(jsd_vals)),
     }
-    if not skip_spatial:
-        result["gradcam_ssim"] = float(np.mean(ssim_vals))
-        result["topk_iou"]     = float(np.mean(iou_vals))
-    else:
-        result["gradcam_ssim"] = None
-        result["topk_iou"]     = None
-
-    return result
 
 
 # ── full evaluation pipeline ──────────────────────────────────────────────────
@@ -277,8 +249,6 @@ def evaluate_model(model_type: str, cfg: dict, device: torch.device) -> dict:
         print(f"\n  Perturbation: {ptype}")
         r = eval_perturbation(
             model, test_ds, ptype, cfg, device,
-            top_k       = cfg["evaluation"]["top_k_percent"],
-            ssim_win    = cfg["evaluation"]["ssim_window_size"],
             figures_dir = figures_dir,
             n_save      = n_save,
         )
@@ -286,12 +256,6 @@ def evaluate_model(model_type: str, cfg: dict, device: torch.device) -> dict:
         print(f"    Top-1 agreement : {r['top1_agreement']:.4f}")
         print(f"    KL divergence   : {r['kl_divergence']:.4f}")
         print(f"    JSD             : {r['jsd']:.4f}")
-        if r["gradcam_ssim"] is not None:
-            print(f"    Grad-CAM SSIM   : {r['gradcam_ssim']:.4f}")
-            print(f"    Top-20% IoU     : {r['topk_iou']:.4f}")
-        else:
-            print(f"    Grad-CAM SSIM   : (skipped — coord change)")
-            print(f"    Top-20% IoU     : (skipped — coord change)")
 
     return results
 
@@ -327,14 +291,9 @@ def print_comparison_table(all_results: dict[str, dict]):
     # Perturbation
     for ptype in PERTURB_TYPES_LIST:
         print(f"  [{ptype}]")
-        print(row("  top1_agreement",  [all_results[m]["perturbation"][ptype]["top1_agreement"]  for m in models]))
-        print(row("  kl_divergence",   [all_results[m]["perturbation"][ptype]["kl_divergence"]   for m in models]))
-        print(row("  jsd",             [all_results[m]["perturbation"][ptype]["jsd"]             for m in models]))
-        ssims = [all_results[m]["perturbation"][ptype]["gradcam_ssim"] for m in models]
-        ious  = [all_results[m]["perturbation"][ptype]["topk_iou"]     for m in models]
-        if any(v is not None for v in ssims):
-            print(row("  gradcam_ssim",   ssims))
-            print(row("  topk_iou",       ious))
+        print(row("  top1_agreement", [all_results[m]["perturbation"][ptype]["top1_agreement"] for m in models]))
+        print(row("  kl_divergence",  [all_results[m]["perturbation"][ptype]["kl_divergence"]  for m in models]))
+        print(row("  jsd",            [all_results[m]["perturbation"][ptype]["jsd"]            for m in models]))
         print()
 
     print("=" * 80)
@@ -351,7 +310,7 @@ def main():
     )
     group.add_argument(
         "--all", action="store_true",
-        help="Evaluate all three models and print comparison table",
+        help="Evaluate all four models and print comparison table",
     )
     parser.add_argument("--config", default="configs/config.yaml")
     args = parser.parse_args()

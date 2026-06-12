@@ -25,6 +25,7 @@ import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
 from torchvision import transforms
+from torchvision.transforms import InterpolationMode
 
 
 PERTURB_TYPES = Literal["brightness", "contrast", "gaussian_noise", "random_crop", "rotation"]
@@ -78,14 +79,14 @@ def _apply_random_crop(img: torch.Tensor, crop_ratio: float) -> torch.Tensor:
     left = (w - cw) // 2
     cropped = img[:, top:top + ch, left:left + cw]
     pil = TF.to_pil_image(cropped)
-    pil = pil.resize((w, h), Image.BILINEAR)
+    pil = pil.resize((w, h), Image.Resampling.BILINEAR)
     return TF.to_tensor(pil)
 
 
 def _apply_rotation(img: torch.Tensor, degrees: float) -> torch.Tensor:
     """Rotate image; fill empty border with zeros."""
     pil = TF.to_pil_image(img)
-    pil = TF.rotate(pil, degrees, interpolation=Image.BILINEAR, expand=False, fill=0)
+    pil = TF.rotate(pil, degrees, interpolation=InterpolationMode.BILINEAR, expand=False, fill=0)
     return TF.to_tensor(pil)
 
 

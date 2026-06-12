@@ -1,18 +1,17 @@
 """
-Training script for all three model variants.
+Training script for all four model variants (2×2 ablation).
 
 Usage:
-    python src/train.py --model baseline    # Model A: ResNeXt-50
-    python src/train.py --model cbam        # Model B: ResNeXt-50 + CBAM
-    python src/train.py --model cbam_loss   # Model C: ResNeXt-50 + CBAM + consistency loss
+    python src/train.py --model baseline       # Model A: ResNeXt-50
+    python src/train.py --model cbam           # Model B: ResNeXt-50 + CBAM
+    python src/train.py --model cbam_loss      # Model C: ResNeXt-50 + CBAM + KL loss
+    python src/train.py --model baseline_loss  # Model D: ResNeXt-50 + KL loss (no CBAM)
 
-All models are saved to checkpoints/{model_type}_best.pth.
-
-Model C training loss:
+All models receive perturbed images during training (CE on clean + CE on perturbed).
+Models C and D additionally apply KL consistency loss:
     L = CE(p, y) + CE(p', y) + lambda_kl * KL(p || p')
-    where p  = softmax(model(x))
-          p' = softmax(model(x'))
-          x' = randomly perturbed x
+
+Optimizer is configured via config.yaml (training.optimizer: sgd | adamw).
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import yaml
-from torch.optim import AdamW
+from torch.optim import AdamW, SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -179,14 +178,26 @@ def main():
     perturb   = RandomPerturbation(cfg)  # all models see perturbed images during training
 
     # ── Optimizer & Scheduler ──────────────────────────────────────────────
-    optimizer = AdamW(
-        model.parameters(),
-        lr           = cfg["training"]["lr"],
-        weight_decay = cfg["training"]["weight_decay"],
-    )
+    opt_name = cfg["training"].get("optimizer", "adamw").lower()
+    if opt_name == "sgd":
+        optimizer = SGD(
+            model.parameters(),
+            lr           = cfg["training"]["lr"],
+            momentum     = cfg["training"].get("momentum", 0.9),
+            weight_decay = cfg["training"]["weight_decay"],
+        )
+        print(f"Optimizer: SGD (lr={cfg['training']['lr']}, momentum={cfg['training'].get('momentum', 0.9)})")
+    else:
+        optimizer = AdamW(
+            model.parameters(),
+            lr           = cfg["training"]["lr"],
+            weight_decay = cfg["training"]["weight_decay"],
+        )
+        print(f"Optimizer: AdamW (lr={cfg['training']['lr']})")
+
     scheduler = CosineAnnealingLR(
         optimizer,
-        T_max = cfg["training"]["epochs"],
+        T_max   = cfg["training"]["epochs"],
         eta_min = 1e-6,
     )
 

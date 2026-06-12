@@ -1,17 +1,19 @@
 data:
   root: "./dataset/images"
-  image_size: 224          # 224 for memory safety; 512 requires ~16GB VRAM for Model C
+  image_size: 512          # matches Lim & Song (2025) — enables direct Model A / paper comparison
   num_classes: 5
   class_names: ["1++", "1+", "1", "2", "3"]
-  num_workers: 4           # 4 for Linux/Mac; set to 0 on Windows
+  num_workers: 0           # 0 on Windows; 4 on Linux/Mac
 
 training:
-  batch_size: 32
-  epochs: 50
+  batch_size: 8            # matches Lim & Song (2025)
+  epochs: 400              # matches Lim & Song (2025)
   lr: 0.0001
   weight_decay: 0.0001
+  optimizer: sgd           # matches Lim & Song (2025); use 'adamw' to switch
+  momentum: 0.9            # SGD momentum (ignored when optimizer=adamw)
   scheduler: cosine
-  early_stopping_patience: 10
+  early_stopping_patience: 20  # matches Lim & Song (2025)
   seed: 42
   use_class_weights: true  # compensate for grade imbalance (grade 3 is very rare)
 
@@ -36,15 +38,11 @@ perturbation:
   eval_rotation_degrees: 10
 
 consistency_loss:
-  lambda_kl: 1.0           # weight of KL(p || p') in total loss for Model C
+  lambda_kl: 1.0           # weight of KL(p || p') in total loss for Models C and D
 
 evaluation:
   gradcam_layer: "layer4"
-  top_k_percent: 0.20      # Top-20% activation pixels for IoU
-  ssim_window_size: 11
-  # crop/rotation change spatial coordinates; skip SSIM/IoU for those two
-  skip_spatial_metrics_for: [random_crop, rotation]
-  n_gradcam_samples: 10    # total Grad-CAM images per perturbation type (distributed evenly across grades: 10 → 2 per grade)
+  n_gradcam_samples: 10    # total Grad-CAM figures per perturbation type (10 → 2 per grade)
 
 paths:
   checkpoint_dir: "./checkpoints"
