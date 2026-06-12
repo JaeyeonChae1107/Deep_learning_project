@@ -153,49 +153,69 @@ def save_gradcam_figure(
     cam_clean: np.ndarray,
     save_path: Path,
     cam_perturbed: Optional[np.ndarray] = None,
+    img_norm_perturbed: Optional[torch.Tensor] = None,
     class_name: str = "",
     perturb_type: str = "",
 ) -> None:
     """
     Save a Grad-CAM visualisation figure.
 
-    Layout (non-spatial perturbations, cam_perturbed provided):
-      [Original] [Clean CAM overlay] [Perturbed CAM overlay]
+    Non-spatial perturbations (img_norm_perturbed=None):
+      [Original] | [Grad-CAM clean] | [Grad-CAM perturbed]
+      Both CAMs are overlaid on the same original image; spatial content identical.
 
-    Layout (spatial perturbations, cam_perturbed=None):
-      [Original] [Clean CAM overlay]
+    Spatial perturbations (img_norm_perturbed provided):
+      [Original + Grad-CAM clean] | [Perturbed image + Grad-CAM perturbed]
+      Each panel uses its own image so the crop/rotation is actually visible.
 
     Args:
-        img_norm:      normalised image tensor [C, H, W]
-        cam_clean:     Grad-CAM heatmap for clean image [H, W] in [0, 1]
-        save_path:     file path to save the PNG
-        cam_perturbed: Grad-CAM heatmap for perturbed image (None → skip)
-        class_name:    predicted class label for the title
-        perturb_type:  perturbation type name for the title
+        img_norm:             normalised clean image tensor [C, H, W]
+        cam_clean:            Grad-CAM heatmap for clean image [H, W] in [0, 1]
+        save_path:            file path to save the PNG
+        cam_perturbed:        Grad-CAM heatmap for perturbed image (None → 2-panel)
+        img_norm_perturbed:   normalised perturbed image tensor (spatial transforms only)
+        class_name:           predicted class label for the title
+        perturb_type:         perturbation type name for the title
     """
-    # Denormalise to [0, 1] RGB for display
-    img_np = img_norm.cpu().numpy().transpose(1, 2, 0)
-    img_np = (img_np * _IMAGENET_STD + _IMAGENET_MEAN).clip(0.0, 1.0)
+    def _denorm(t: torch.Tensor) -> np.ndarray:
+        arr = t.cpu().numpy().transpose(1, 2, 0)
+        return (arr * _IMAGENET_STD + _IMAGENET_MEAN).clip(0.0, 1.0)
 
     def _overlay(img: np.ndarray, cam: np.ndarray) -> np.ndarray:
-        heatmap = plt.cm.jet(cam)[..., :3]          # [H, W, 3]
+        heatmap = plt.cm.jet(cam)[..., :3]
         return (0.55 * img + 0.45 * heatmap).clip(0.0, 1.0)
 
-    n_cols = 3 if cam_perturbed is not None else 2
-    fig, axes = plt.subplots(1, n_cols, figsize=(5 * n_cols, 5))
+    img_np = _denorm(img_norm)
 
-    axes[0].imshow(img_np)
-    axes[0].set_title(f"Original\n({class_name})")
-    axes[0].axis("off")
+    if img_norm_perturbed is not None:
+        # Spatial: each panel shows its own image so crop/rotation is visible
+        img_pert_np = _denorm(img_norm_perturbed)
+        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 
-    axes[1].imshow(_overlay(img_np, cam_clean))
-    axes[1].set_title("Grad-CAM (clean)")
-    axes[1].axis("off")
+        axes[0].imshow(_overlay(img_np, cam_clean))
+        axes[0].set_title(f"Original – Grad-CAM\n({class_name})")
+        axes[0].axis("off")
 
-    if cam_perturbed is not None:
-        axes[2].imshow(_overlay(img_np, cam_perturbed))
-        axes[2].set_title(f"Grad-CAM ({perturb_type})")
-        axes[2].axis("off")
+        axes[1].imshow(_overlay(img_pert_np, cam_perturbed))
+        axes[1].set_title(f"{perturb_type} – Grad-CAM")
+        axes[1].axis("off")
+    else:
+        # Photometric: overlay both CAMs on the same original image
+        n_cols = 3 if cam_perturbed is not None else 2
+        fig, axes = plt.subplots(1, n_cols, figsize=(5 * n_cols, 5))
+
+        axes[0].imshow(img_np)
+        axes[0].set_title(f"Original\n({class_name})")
+        axes[0].axis("off")
+
+        axes[1].imshow(_overlay(img_np, cam_clean))
+        axes[1].set_title("Grad-CAM (clean)")
+        axes[1].axis("off")
+
+        if cam_perturbed is not None:
+            axes[2].imshow(_overlay(img_np, cam_perturbed))
+            axes[2].set_title(f"Grad-CAM ({perturb_type})")
+            axes[2].axis("off")
 
     fig.tight_layout()
     save_path.parent.mkdir(parents=True, exist_ok=True)

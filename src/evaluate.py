@@ -169,12 +169,13 @@ def eval_perturbation(
         kl_divs.append(kl_divergence(p, p2))
         jsd_vals.append(js_divergence(p, p2))
 
-        # Grad-CAM (skip spatial transforms)
-        if not skip_spatial:
-            cam_orig = gradcam.compute(x,       class_idx=pred_orig)
-            cam_pert = gradcam.compute(x_prime, class_idx=pred_orig)  # same class as reference
+        want_save = figures_dir is not None and saved_per_class[label] < n_per_class
 
-            # SSIM requires multichannel=False, data_range explicitly set
+        if not skip_spatial:
+            # Photometric perturbation: compute CAMs for every sample (needed for SSIM/IoU)
+            cam_orig = gradcam.compute(x,       class_idx=pred_orig)
+            cam_pert = gradcam.compute(x_prime, class_idx=pred_orig)
+
             win = min(ssim_win, cam_orig.shape[0], cam_orig.shape[1])
             if win % 2 == 0:
                 win -= 1
@@ -185,8 +186,7 @@ def eval_perturbation(
             mask_pert = top_k_mask(cam_pert, top_k)
             iou_vals.append(cam_iou(mask_orig, mask_pert))
 
-            # Save sample Grad-CAM figures — one per grade class to avoid bias
-            if figures_dir is not None and saved_per_class[label] < n_per_class:
+            if want_save:
                 idx = saved_per_class[label]
                 save_gradcam_figure(
                     img_norm      = x.cpu(),
@@ -197,6 +197,23 @@ def eval_perturbation(
                     perturb_type  = perturb_type,
                 )
                 saved_per_class[label] += 1
+
+        elif want_save:
+            # Spatial perturbation: SSIM/IoU skipped, but still visualise where
+            # the model attends on the spatially-transformed image
+            cam_orig = gradcam.compute(x,       class_idx=pred_orig)
+            cam_pert = gradcam.compute(x_prime, class_idx=pred_orig)
+            idx = saved_per_class[label]
+            save_gradcam_figure(
+                img_norm             = x.cpu(),
+                cam_clean            = cam_orig,
+                cam_perturbed        = cam_pert,
+                img_norm_perturbed   = x_prime.cpu(),
+                save_path            = figures_dir / perturb_type / f"grade{CLASS_NAMES[label]}_{idx:02d}.png",
+                class_name           = CLASS_NAMES[pred_orig],
+                perturb_type         = perturb_type,
+            )
+            saved_per_class[label] += 1
 
     gradcam.remove_hooks()
 
