@@ -7,8 +7,8 @@ Usage:
     python src/train.py --model cbam_loss      # Model C: ResNeXt-50 + CBAM + KL loss
     python src/train.py --model baseline_loss  # Model D: ResNeXt-50 + KL loss (no CBAM)
 
-All models receive perturbed images during training (CE on clean + CE on perturbed).
-Models C and D additionally apply KL consistency loss:
+Models A and B: standard CE loss only (no perturbation during training).
+Models C and D: perturbation consistency loss:
     L = CE(p, y) + CE(p', y) + lambda_kl * KL(p || p')
 
 Optimizer is configured via config.yaml (training.optimizer: sgd | adamw).
@@ -83,16 +83,14 @@ def train_one_epoch(
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad()
 
-        x_prime = perturb(x).to(device)
-
         if model_type in ("cbam_loss", "baseline_loss"):
             # Models C & D: CE(clean) + CE(perturbed) + KL
+            x_prime = perturb(x).to(device)
             loss, logits = model.consistency_loss(x, x_prime, y, ce_fn, lambda_kl)
         else:
-            # Models A & B: CE(clean) + CE(perturbed), no KL
-            logits       = model(x)
-            logits_pert  = model(x_prime)
-            loss         = ce_fn(logits, y) + ce_fn(logits_pert, y)
+            # Models A & B: standard CE only (no perturbation)
+            logits = model(x)
+            loss   = ce_fn(logits, y)
 
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
@@ -175,7 +173,7 @@ def main():
         ce_fn = nn.CrossEntropyLoss()
 
     lambda_kl = cfg["consistency_loss"]["lambda_kl"]
-    perturb   = RandomPerturbation(cfg)  # all models see perturbed images during training
+    perturb   = RandomPerturbation(cfg)  # used only by Models C and D
 
     # ── Optimizer & Scheduler ──────────────────────────────────────────────
     opt_name = cfg["training"].get("optimizer", "adamw").lower()
