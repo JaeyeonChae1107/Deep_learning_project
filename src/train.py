@@ -98,8 +98,8 @@ def train_one_epoch(
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
 
-        total_loss += loss.item()
-        total_acc  += accuracy(logits, y)
+        total_loss += loss.detach().item()
+        total_acc  += accuracy(logits.detach(), y)
         n_batches  += 1
 
     return total_loss / n_batches, total_acc / n_batches
