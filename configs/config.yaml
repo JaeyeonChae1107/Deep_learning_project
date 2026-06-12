@@ -1,19 +1,18 @@
 data:
   root: "./dataset/images"
-  image_size: 512          # matches Lim & Song (2025) — enables direct Model A / paper comparison
+  image_size: 224
   num_classes: 5
   class_names: ["1++", "1+", "1", "2", "3"]
   num_workers: 0           # 0 on Windows; 4 on Linux/Mac
 
 training:
-  batch_size: 8            # matches Lim & Song (2025)
-  epochs: 400              # matches Lim & Song (2025)
+  batch_size: 32
+  epochs: 50
   lr: 0.0001
   weight_decay: 0.0001
-  optimizer: sgd           # matches Lim & Song (2025); use 'adamw' to switch
-  momentum: 0.9            # SGD momentum (ignored when optimizer=adamw)
+  optimizer: adamw         # use 'sgd' to switch
   scheduler: cosine
-  early_stopping_patience: 20  # matches Lim & Song (2025)
+  early_stopping_patience: 10
   seed: 42
   use_class_weights: true  # compensate for grade imbalance (grade 3 is very rare)
 
