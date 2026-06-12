@@ -44,7 +44,7 @@ evaluation:
   ssim_window_size: 11
   # crop/rotation change spatial coordinates; skip SSIM/IoU for those two
   skip_spatial_metrics_for: [random_crop, rotation]
-  n_gradcam_samples: 5     # number of Grad-CAM overlay images saved per perturbation type
+  n_gradcam_samples: 5     # total Grad-CAM images per perturbation type (distributed evenly across grades: 5 → 1 per grade)
 
 paths:
   checkpoint_dir: "./checkpoints"

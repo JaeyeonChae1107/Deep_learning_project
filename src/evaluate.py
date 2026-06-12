@@ -134,7 +134,8 @@ def eval_perturbation(
 
     Args:
         figures_dir: directory to save Grad-CAM sample figures (None → skip)
-        n_save:      number of sample figures to save per perturbation type
+        n_save:      total figures to save per perturbation type, distributed
+                     evenly across classes (n_save=5 → 1 per class)
     """
     perturb = FixedPerturbation(perturb_type, cfg)
     gradcam = GradCAM(model, target_layer_name=cfg["evaluation"]["gradcam_layer"])
@@ -143,10 +144,11 @@ def eval_perturbation(
 
     agreements, kl_divs, jsd_vals = [], [], []
     ssim_vals, iou_vals = [], []
-    n_saved = 0
+    n_per_class  = max(1, n_save // len(CLASS_NAMES))
+    saved_per_class: dict[int, int] = {i: 0 for i in range(len(CLASS_NAMES))}
 
     model.eval()
-    for x, _ in tqdm(dataset, desc=f"perturb={perturb_type}", leave=False):
+    for x, label in tqdm(dataset, desc=f"perturb={perturb_type}", leave=False):
         # x: [C, H, W] tensor (already normalised by dataset transform)
         x = x.to(device)
 
@@ -183,17 +185,18 @@ def eval_perturbation(
             mask_pert = top_k_mask(cam_pert, top_k)
             iou_vals.append(cam_iou(mask_orig, mask_pert))
 
-            # Save sample Grad-CAM figures
-            if figures_dir is not None and n_saved < n_save:
+            # Save sample Grad-CAM figures — one per grade class to avoid bias
+            if figures_dir is not None and saved_per_class[label] < n_per_class:
+                idx = saved_per_class[label]
                 save_gradcam_figure(
                     img_norm      = x.cpu(),
                     cam_clean     = cam_orig,
                     cam_perturbed = cam_pert,
-                    save_path     = figures_dir / perturb_type / f"sample_{n_saved:03d}.png",
+                    save_path     = figures_dir / perturb_type / f"grade{CLASS_NAMES[label]}_{idx:02d}.png",
                     class_name    = CLASS_NAMES[pred_orig],
                     perturb_type  = perturb_type,
                 )
-                n_saved += 1
+                saved_per_class[label] += 1
 
     gradcam.remove_hooks()
 
