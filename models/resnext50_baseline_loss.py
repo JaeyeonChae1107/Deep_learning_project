@@ -14,14 +14,16 @@ Same as Model C:
 
 Role in ablation
 ----------------
-Control for separating CBAM's contribution from the KL consistency loss:
+Completes a 2x2 ablation (CBAM on/off × KL loss on/off).
+CBAM is an architectural change; KL loss is a training objective change.
+They are independent dimensions, not sequential additions.
 
-    B - A = CBAM effect alone (no KL)
-    D - A = KL loss effect alone (no CBAM)
-    C - B = KL added on top of CBAM
-    C - D = CBAM added on top of KL
+    B - A = CBAM contribution        (no KL loss in either)
+    D - A = KL loss contribution     (no CBAM in either)
+    C - B = KL loss contribution     when CBAM is present
+    C - D = CBAM contribution        when KL loss is present
 
-Without Model D, it is impossible to tell whether Model C's reliability
+Without Model D it is impossible to tell whether Model C's reliability
 improvement comes from CBAM or from the consistency training objective.
 
 Usage

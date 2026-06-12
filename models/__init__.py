@@ -19,11 +19,11 @@ def build_model(
                 'cbam_loss'      → Model C: ResNeXt-50 + CBAM + consistency loss
                 'baseline_loss'  → Model D: ResNeXt-50 + consistency loss (no CBAM)
 
-    Ablation matrix:
-        B - A = CBAM effect (no KL)
-        D - A = KL loss effect (no CBAM)
-        C - B = KL added on top of CBAM
-        C - D = CBAM added on top of KL
+    Ablation matrix (2x2, independent dimensions):
+        B - A = CBAM contribution  (no KL loss in either)
+        D - A = KL loss contribution  (no CBAM in either)
+        C - B = KL loss contribution when CBAM is present
+        C - D = CBAM contribution when KL loss is present
     """
     if model_type == "baseline":
         return ResNeXt50Baseline(num_classes, pretrained)
