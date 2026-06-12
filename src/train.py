@@ -71,7 +71,7 @@ def train_one_epoch(
     ce_fn: nn.CrossEntropyLoss,
     device: torch.device,
     model_type: str,
-    perturb: RandomPerturbation | None,
+    perturb: RandomPerturbation,
     lambda_kl: float,
 ) -> tuple[float, float]:
     """Returns (avg_loss, avg_acc)."""
@@ -84,14 +84,16 @@ def train_one_epoch(
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad()
 
+        x_prime = perturb(x).to(device)
+
         if model_type in ("cbam_loss", "baseline_loss"):
-            # Models C & D: consistency_loss (CE + CE_perturbed + KL)
-            x_prime = perturb(x).to(device)
+            # Models C & D: CE(clean) + CE(perturbed) + KL
             loss, logits = model.consistency_loss(x, x_prime, y, ce_fn, lambda_kl)
         else:
-            # Models A & B: standard CE
-            logits = model(x)
-            loss   = ce_fn(logits, y)
+            # Models A & B: CE(clean) + CE(perturbed), no KL
+            logits       = model(x)
+            logits_pert  = model(x_prime)
+            loss         = ce_fn(logits, y) + ce_fn(logits_pert, y)
 
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
@@ -174,7 +176,7 @@ def main():
         ce_fn = nn.CrossEntropyLoss()
 
     lambda_kl = cfg["consistency_loss"]["lambda_kl"]
-    perturb   = RandomPerturbation(cfg) if args.model in ("cbam_loss", "baseline_loss") else None
+    perturb   = RandomPerturbation(cfg)  # all models see perturbed images during training
 
     # ── Optimizer & Scheduler ──────────────────────────────────────────────
     optimizer = AdamW(
