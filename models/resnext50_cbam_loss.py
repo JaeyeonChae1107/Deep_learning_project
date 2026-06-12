@@ -3,7 +3,7 @@ Model C: ResNeXt-50 + CBAM + Perturbation Consistency Loss.
 
 Architecture
 ------------
-Identical to Model B (ResNeXt-50 + CBAM at each stage).
+Identical to Model B (ResNeXt-50 + CBAM inside each Bottleneck block, Woo et al. 2018).
 The only difference is the training objective: in addition to the standard
 cross-entropy loss on clean images, the model is trained with a KL-divergence
 term that pushes the prediction distribution on perturbed images toward that
@@ -51,16 +51,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as tv_models
 
-from models.attention_module.cbam import CBAM
+from models.resnext50_cbam import CBAMBottleneckWrapper, _inject_cbam  # noqa: F401
 
 
 class ResNeXt50CBAMLoss(nn.Module):
     """
     ResNeXt-50 + CBAM, designed for training with perturbation consistency loss.
 
-    The architecture is identical to ResNeXt50CBAM (Model B); the only addition
-    is the `consistency_loss` helper method, which encapsulates the Model C
-    training objective so that train.py can call it without extra boilerplate.
+    The architecture is identical to ResNeXt50CBAM (Model B) — CBAM is injected
+    inside each Bottleneck block before the residual add (Woo et al. 2018).
+    The only addition is the `consistency_loss` helper method.
 
     Channel / shape flow: same as Model B — see resnext50_cbam.py.
 
@@ -80,24 +80,20 @@ class ResNeXt50CBAMLoss(nn.Module):
         )
         backbone = tv_models.resnext50_32x4d(weights=weights)
 
-        # ── Backbone (pretrained) ──────────────────────────────────────────
+        # ── Backbone stem (pretrained) ─────────────────────────────────────
         self.layer0 = nn.Sequential(
             backbone.conv1,
             backbone.bn1,
             backbone.relu,
             backbone.maxpool,
         )
-        self.layer1 = backbone.layer1
-        self.layer2 = backbone.layer2
-        self.layer3 = backbone.layer3
-        self.layer4 = backbone.layer4
-        self.avgpool = backbone.avgpool
 
-        # ── CBAM modules (new, random-init) ───────────────────────────────
-        self.cbam1 = CBAM(gate_channels=256,  reduction_ratio=16)
-        self.cbam2 = CBAM(gate_channels=512,  reduction_ratio=16)
-        self.cbam3 = CBAM(gate_channels=1024, reduction_ratio=16)
-        self.cbam4 = CBAM(gate_channels=2048, reduction_ratio=16)
+        # ── Residual stages: CBAM injected inside every block ─────────────
+        self.layer1 = _inject_cbam(backbone.layer1)
+        self.layer2 = _inject_cbam(backbone.layer2)
+        self.layer3 = _inject_cbam(backbone.layer3)
+        self.layer4 = _inject_cbam(backbone.layer4)
+        self.avgpool = backbone.avgpool
 
         # ── Classification head (new, random-init) ─────────────────────────
         self.fc = nn.Linear(2048, num_classes)
@@ -107,31 +103,11 @@ class ResNeXt50CBAMLoss(nn.Module):
     # ── forward ───────────────────────────────────────────────────────────
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Standard forward pass (used for both clean and perturbed images).
-
-        Parameters
-        ----------
-        x : Tensor [B, 3, H, W]
-
-        Returns
-        -------
-        logits : Tensor [B, num_classes]
-        """
         x = self.layer0(x)
-
         x = self.layer1(x)
-        x = self.cbam1(x)
-
         x = self.layer2(x)
-        x = self.cbam2(x)
-
         x = self.layer3(x)
-        x = self.cbam3(x)
-
         x = self.layer4(x)
-        x = self.cbam4(x)
-
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         return self.fc(x)

@@ -2,9 +2,9 @@
 Grad-CAM implementation for ResNeXt-50 (baseline and CBAM variants).
 
 Target layer: 'layer4' for all models (as specified in config).
-For Model B/C, gradients from the classification head flow back through cbam4
-into layer4, so the attention signal is already incorporated in the Grad-CAM
-output even when hooking at layer4.
+For Model B/C, CBAM is applied inside each Bottleneck block (before the residual
+add), so the features captured at layer4 and the gradients flowing back both
+already reflect the CBAM attention signal.
 
 Usage:
     cam = GradCAM(model, target_layer_name='layer4')
