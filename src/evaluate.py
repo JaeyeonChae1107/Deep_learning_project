@@ -47,7 +47,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.dataset import BeefGradingDataset, CLASS_NAMES
-from src.gradcam import GradCAM, cam_iou, top_k_mask
+from src.gradcam import GradCAM, cam_iou, top_k_mask, save_gradcam_figure
 from models import build_model
 from src.perturbation import FixedPerturbation
 
@@ -125,10 +125,16 @@ def eval_perturbation(
     device: torch.device,
     top_k: float = 0.20,
     ssim_win: int = 11,
+    figures_dir: Path | None = None,
+    n_save: int = 0,
 ) -> dict:
     """
     Compute prediction and attention stability for a single perturbation type.
     Processes one sample at a time (required for Grad-CAM).
+
+    Args:
+        figures_dir: directory to save Grad-CAM sample figures (None → skip)
+        n_save:      number of sample figures to save per perturbation type
     """
     perturb = FixedPerturbation(perturb_type, cfg)
     gradcam = GradCAM(model, target_layer_name=cfg["evaluation"]["gradcam_layer"])
@@ -137,6 +143,7 @@ def eval_perturbation(
 
     agreements, kl_divs, jsd_vals = [], [], []
     ssim_vals, iou_vals = [], []
+    n_saved = 0
 
     model.eval()
     for x, _ in tqdm(dataset, desc=f"perturb={perturb_type}", leave=False):
@@ -175,6 +182,18 @@ def eval_perturbation(
             mask_orig = top_k_mask(cam_orig, top_k)
             mask_pert = top_k_mask(cam_pert, top_k)
             iou_vals.append(cam_iou(mask_orig, mask_pert))
+
+            # Save sample Grad-CAM figures
+            if figures_dir is not None and n_saved < n_save:
+                save_gradcam_figure(
+                    img_norm      = x.cpu(),
+                    cam_clean     = cam_orig,
+                    cam_perturbed = cam_pert,
+                    save_path     = figures_dir / perturb_type / f"sample_{n_saved:03d}.png",
+                    class_name    = CLASS_NAMES[pred_orig],
+                    perturb_type  = perturb_type,
+                )
+                n_saved += 1
 
     gradcam.remove_hooks()
 
@@ -230,14 +249,18 @@ def evaluate_model(model_type: str, cfg: dict, device: torch.device) -> dict:
         print(f"    {grade}: {f1:.4f}")
 
     # ── Per-perturbation reliability ───────────────────────────────────────
-    print("\n[2/2] Perturbation stability ...")
+    figures_dir = Path(cfg["paths"]["figures_dir"]) / model_type
+    n_save      = cfg["evaluation"].get("n_gradcam_samples", 5)
+    print(f"\n[2/2] Perturbation stability (saving {n_save} Grad-CAM samples → {figures_dir}) ...")
     results["perturbation"] = {}
     for ptype in PERTURB_TYPES_LIST:
         print(f"\n  Perturbation: {ptype}")
         r = eval_perturbation(
             model, test_ds, ptype, cfg, device,
-            top_k   = cfg["evaluation"]["top_k_percent"],
-            ssim_win= cfg["evaluation"]["ssim_window_size"],
+            top_k       = cfg["evaluation"]["top_k_percent"],
+            ssim_win    = cfg["evaluation"]["ssim_window_size"],
+            figures_dir = figures_dir,
+            n_save      = n_save,
         )
         results["perturbation"][ptype] = r
         print(f"    Top-1 agreement : {r['top1_agreement']:.4f}")

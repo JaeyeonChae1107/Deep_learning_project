@@ -14,11 +14,18 @@ Usage:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend (safe on headless servers)
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+_IMAGENET_MEAN = np.array([0.485, 0.456, 0.406])
+_IMAGENET_STD  = np.array([0.229, 0.224, 0.225])
 
 
 class GradCAM:
@@ -139,3 +146,58 @@ def cam_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
     intersection = (mask_a & mask_b).sum()
     union = (mask_a | mask_b).sum()
     return float(intersection / union) if union > 0 else 0.0
+
+
+def save_gradcam_figure(
+    img_norm: torch.Tensor,
+    cam_clean: np.ndarray,
+    save_path: Path,
+    cam_perturbed: Optional[np.ndarray] = None,
+    class_name: str = "",
+    perturb_type: str = "",
+) -> None:
+    """
+    Save a Grad-CAM visualisation figure.
+
+    Layout (non-spatial perturbations, cam_perturbed provided):
+      [Original] [Clean CAM overlay] [Perturbed CAM overlay]
+
+    Layout (spatial perturbations, cam_perturbed=None):
+      [Original] [Clean CAM overlay]
+
+    Args:
+        img_norm:      normalised image tensor [C, H, W]
+        cam_clean:     Grad-CAM heatmap for clean image [H, W] in [0, 1]
+        save_path:     file path to save the PNG
+        cam_perturbed: Grad-CAM heatmap for perturbed image (None → skip)
+        class_name:    predicted class label for the title
+        perturb_type:  perturbation type name for the title
+    """
+    # Denormalise to [0, 1] RGB for display
+    img_np = img_norm.cpu().numpy().transpose(1, 2, 0)
+    img_np = (img_np * _IMAGENET_STD + _IMAGENET_MEAN).clip(0.0, 1.0)
+
+    def _overlay(img: np.ndarray, cam: np.ndarray) -> np.ndarray:
+        heatmap = plt.cm.jet(cam)[..., :3]          # [H, W, 3]
+        return (0.55 * img + 0.45 * heatmap).clip(0.0, 1.0)
+
+    n_cols = 3 if cam_perturbed is not None else 2
+    fig, axes = plt.subplots(1, n_cols, figsize=(5 * n_cols, 5))
+
+    axes[0].imshow(img_np)
+    axes[0].set_title(f"Original\n({class_name})")
+    axes[0].axis("off")
+
+    axes[1].imshow(_overlay(img_np, cam_clean))
+    axes[1].set_title("Grad-CAM (clean)")
+    axes[1].axis("off")
+
+    if cam_perturbed is not None:
+        axes[2].imshow(_overlay(img_np, cam_perturbed))
+        axes[2].set_title(f"Grad-CAM ({perturb_type})")
+        axes[2].axis("off")
+
+    fig.tight_layout()
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(save_path, dpi=100, bbox_inches="tight")
+    plt.close(fig)

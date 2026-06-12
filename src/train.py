@@ -28,6 +28,7 @@ import torch.nn as nn
 import yaml
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -206,6 +207,10 @@ def main():
     best_path = ckpt_dir / f"{args.model}_best.pth"
     last_path = ckpt_dir / f"{args.model}_last.pth"
 
+    runs_dir = Path(cfg["paths"].get("runs_dir", "./runs")) / args.model
+    writer   = SummaryWriter(log_dir=str(runs_dir))
+    print(f"TensorBoard logs → {runs_dir}")
+
     # ── Training loop ──────────────────────────────────────────────────────
     epochs    = cfg["training"]["epochs"]
     patience  = cfg["training"]["early_stopping_patience"]
@@ -220,6 +225,13 @@ def main():
         )
         val_loss, val_acc = evaluate(model, val_loader, ce_fn, device)
         scheduler.step()
+
+        # ── TensorBoard logging ────────────────────────────────────────────
+        writer.add_scalar("Loss/train", train_loss, epoch)
+        writer.add_scalar("Loss/val",   val_loss,   epoch)
+        writer.add_scalar("Acc/train",  train_acc,  epoch)
+        writer.add_scalar("Acc/val",    val_acc,    epoch)
+        writer.add_scalar("LR",         scheduler.get_last_lr()[0], epoch)
 
         elapsed = time.time() - t0
         print(
@@ -251,8 +263,10 @@ def main():
                 print(f"  Early stopping after {patience} epochs without improvement.")
                 break
 
+    writer.close()
     print(f"\nTraining complete. Best val acc: {best_val_acc:.4f}")
     print(f"Best checkpoint: {best_path}")
+    print(f"TensorBoard:     tensorboard --logdir {runs_dir.parent}")
 
 
 if __name__ == "__main__":

@@ -44,8 +44,10 @@ evaluation:
   ssim_window_size: 11
   # crop/rotation change spatial coordinates; skip SSIM/IoU for those two
   skip_spatial_metrics_for: [random_crop, rotation]
+  n_gradcam_samples: 5     # number of Grad-CAM overlay images saved per perturbation type
 
 paths:
   checkpoint_dir: "./checkpoints"
   results_dir: "./results"
   figures_dir: "./figures"
+  runs_dir: "./runs"        # TensorBoard log directory
