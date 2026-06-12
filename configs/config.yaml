@@ -3,7 +3,7 @@ data:
   image_size: 224
   num_classes: 5
   class_names: ["1++", "1+", "1", "2", "3"]
-  num_workers: 0           # 0 on Windows; 4 on Linux/Mac
+  num_workers: 4           # 4 on Linux/Mac; 0 on Windows
 
 training:
   batch_size: 32
