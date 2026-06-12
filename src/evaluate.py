@@ -329,7 +329,7 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate beef grading model reliability")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--model", choices=["baseline", "cbam", "cbam_loss"],
+        "--model", choices=["baseline", "cbam", "cbam_loss", "baseline_loss"],
         help="Single model to evaluate",
     )
     group.add_argument(
@@ -346,7 +346,7 @@ def main():
 
     if args.all:
         all_results = {}
-        for mtype in ["baseline", "cbam", "cbam_loss"]:
+        for mtype in ["baseline", "cbam", "baseline_loss", "cbam_loss"]:
             try:
                 r = evaluate_model(mtype, cfg, device)
                 save_results(mtype, r, cfg["paths"]["results_dir"])

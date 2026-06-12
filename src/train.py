@@ -84,8 +84,8 @@ def train_one_epoch(
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad()
 
-        if model_type == "cbam_loss":
-            # Model C: use the built-in consistency_loss method (CE + CE_perturbed + KL)
+        if model_type in ("cbam_loss", "baseline_loss"):
+            # Models C & D: consistency_loss (CE + CE_perturbed + KL)
             x_prime = perturb(x).to(device)
             loss, logits = model.consistency_loss(x, x_prime, y, ce_fn, lambda_kl)
         else:
@@ -133,7 +133,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train beef grading model")
     parser.add_argument(
         "--model", required=True,
-        choices=["baseline", "cbam", "cbam_loss"],
+        choices=["baseline", "cbam", "cbam_loss", "baseline_loss"],
         help="Model variant to train",
     )
     parser.add_argument("--config", default="configs/config.yaml")
@@ -174,7 +174,7 @@ def main():
         ce_fn = nn.CrossEntropyLoss()
 
     lambda_kl = cfg["consistency_loss"]["lambda_kl"]
-    perturb   = RandomPerturbation(cfg) if args.model == "cbam_loss" else None
+    perturb   = RandomPerturbation(cfg) if args.model in ("cbam_loss", "baseline_loss") else None
 
     # ── Optimizer & Scheduler ──────────────────────────────────────────────
     optimizer = AdamW(
