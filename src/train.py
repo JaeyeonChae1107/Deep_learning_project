@@ -165,12 +165,7 @@ def main():
     ).to(device)
 
     # ── Loss ───────────────────────────────────────────────────────────────
-    if cfg["training"]["use_class_weights"]:
-        weights = train_loader.dataset.class_weights().to(device)
-        print(f"Class weights: {weights.cpu().numpy().round(3)}")
-        ce_fn = nn.CrossEntropyLoss(weight=weights)
-    else:
-        ce_fn = nn.CrossEntropyLoss()
+    ce_fn = nn.CrossEntropyLoss()
 
     lambda_kl = cfg["consistency_loss"]["lambda_kl"]
     perturb   = RandomPerturbation(cfg)  # used only by Models C and D

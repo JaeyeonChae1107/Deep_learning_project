@@ -14,7 +14,6 @@ training:
   scheduler: cosine
   early_stopping_patience: 15
   seed: 42
-  use_class_weights: true  # compensate for grade imbalance (grade 3 is very rare)
 
 model:
   # backbone is fixed to resnext50_32x4d inside each model class;
