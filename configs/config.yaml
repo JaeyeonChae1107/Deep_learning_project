@@ -1,12 +1,12 @@
 data:
   root: "./dataset/images"
-  image_size: 224
+  image_size: 512
   num_classes: 5
   class_names: ["1++", "1+", "1", "2", "3"]
   num_workers: 4           # 4 on Linux/Mac; 0 on Windows
 
 training:
-  batch_size: 32
+  batch_size: 8
   epochs: 50
   lr: 0.001
   weight_decay: 0.0001
